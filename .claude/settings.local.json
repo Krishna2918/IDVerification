@@ -7,7 +7,10 @@
       "Bash(git init:*)",
       "Bash(git remote add:*)",
       "Bash(git add:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nInitial commit: Bank-grade ID verification system\n\nFeatures:\n- AWS CDK infrastructure \\(KMS, S3, DynamoDB, Cognito, Step Functions\\)\n- Lambda functions for verification workflow\n- Decision engine with PASS/FAIL/REVIEW thresholds\n- React + TypeScript frontend with verification flow\n- Admin dashboard for manual review queue\n- Audit logging for compliance\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nInitial commit: Bank-grade ID verification system\n\nFeatures:\n- AWS CDK infrastructure \\(KMS, S3, DynamoDB, Cognito, Step Functions\\)\n- Lambda functions for verification workflow\n- Decision engine with PASS/FAIL/REVIEW thresholds\n- React + TypeScript frontend with verification flow\n- Admin dashboard for manual review queue\n- Audit logging for compliance\n\n🤖 Generated with [Claude Code]\\(https://claude.com/claude-code\\)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git push:*)",
+      "Bash(npm install)",
+      "Bash(git commit:*)"
     ]
   }
 }

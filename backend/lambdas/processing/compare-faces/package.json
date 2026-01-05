@@ -1,0 +1,8 @@
+{
+  "name": "compare-faces",
+  "version": "1.0.0",
+  "main": "handler.js",
+  "dependencies": {
+    "@aws-sdk/client-rekognition": "^3.400.0"
+  }
+}

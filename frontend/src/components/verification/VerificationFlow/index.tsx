@@ -4,6 +4,7 @@ import { DocumentCapture } from '../DocumentCapture';
 import { LivenessCheck } from '../LivenessCheck';
 import { ProcessingStatus } from '../ProcessingStatus';
 import { VerificationResult } from '../VerificationResult';
+import { verificationApi } from '../../../services/api';
 
 type VerificationStep =
   | 'consent'
@@ -29,51 +30,82 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
   const [attemptCount, setAttemptCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ outcome: string; reason: string } | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const maxAttempts = 3;
 
   const handleConsentGiven = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
     try {
-      // TODO: Call API to create session
-      // const response = await api.createSession({ consentGiven: true, externalReferenceId });
-      // setSessionId(response.sessionId);
-
-      // Mock for now
-      setSessionId(`session-${Date.now()}`);
+      const response = await verificationApi.createSession();
+      setSessionId(response.sessionId);
+      await verificationApi.recordConsent(response.sessionId);
       setCurrentStep('document-front');
-    } catch (err) {
-      setError('Failed to create verification session. Please try again.');
+    } catch (err: any) {
+      setError(err.message || 'Failed to create verification session. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
-  }, [externalReferenceId]);
+  }, []);
 
-  const handleDocumentCaptured = useCallback(async (side: 'front' | 'back') => {
+  const handleDocumentCaptured = useCallback(async (imageBlob: Blob, side: 'front' | 'back') => {
+    if (!sessionId) return;
+
+    setIsLoading(true);
+    setError(null);
     try {
-      // TODO: Upload document to S3
+      // Get presigned URL
+      const { uploadUrl, uploadId } = await verificationApi.getUploadUrl(
+        sessionId,
+        side,
+        imageBlob.type || 'image/jpeg'
+      );
+
+      // Upload to S3
+      await verificationApi.uploadDocument(uploadUrl, imageBlob);
+
+      // Confirm upload
+      await verificationApi.confirmUpload(sessionId, uploadId);
+
       if (side === 'front') {
-        // For simplicity, skip back side for now
         setCurrentStep('liveness');
       } else {
         setCurrentStep('liveness');
       }
-    } catch (err) {
-      setError('Failed to upload document. Please try again.');
+    } catch (err: any) {
+      setError(err.message || 'Failed to upload document. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
-  }, []);
+  }, [sessionId]);
 
   const handleLivenessComplete = useCallback(async () => {
+    if (!sessionId) return;
+
+    setIsLoading(true);
+    setError(null);
     try {
       setCurrentStep('processing');
-      // TODO: Submit verification
-      // Simulate processing
-      setTimeout(() => {
-        // Mock result
-        setResult({ outcome: 'PASS', reason: 'ALL_CHECKS_PASSED' });
-        setCurrentStep('result');
-      }, 3000);
-    } catch (err) {
-      setError('Verification processing failed. Please try again.');
+
+      // Submit for verification
+      await verificationApi.submitVerification(sessionId);
+
+      // Poll for result
+      const status = await verificationApi.pollForResult(sessionId);
+
+      setResult({
+        outcome: status.decision || 'PENDING',
+        reason: status.reason || '',
+      });
+      setCurrentStep('result');
+    } catch (err: any) {
+      setError(err.message || 'Verification processing failed. Please try again.');
+      setCurrentStep('liveness');
+    } finally {
+      setIsLoading(false);
     }
-  }, []);
+  }, [sessionId]);
 
   const handleRetry = useCallback(() => {
     if (attemptCount < maxAttempts - 1) {
@@ -98,7 +130,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         return (
           <DocumentCapture
             side="front"
-            onCapture={() => handleDocumentCaptured('front')}
+            onCapture={(blob) => handleDocumentCaptured(blob, 'front')}
             onError={(err) => setError(err)}
           />
         );
@@ -107,7 +139,7 @@ export const VerificationFlow: React.FC<VerificationFlowProps> = ({
         return (
           <DocumentCapture
             side="back"
-            onCapture={() => handleDocumentCaptured('back')}
+            onCapture={(blob) => handleDocumentCaptured(blob, 'back')}
             onError={(err) => setError(err)}
           />
         );
