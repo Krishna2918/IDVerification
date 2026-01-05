@@ -1,0 +1,28 @@
+{
+  "name": "id-verification",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bank-grade ID verification system using AWS Rekognition, Textract, and Step Functions",
+  "workspaces": [
+    "infrastructure/cdk",
+    "backend/shared",
+    "backend/lambdas/*",
+    "frontend"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "deploy:dev": "cd infrastructure/cdk && npm run deploy:dev",
+    "deploy:prod": "cd infrastructure/cdk && npm run deploy:prod"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Krishna2918/IDVerification.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
