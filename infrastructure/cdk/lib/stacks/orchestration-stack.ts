@@ -230,12 +230,15 @@ export class OrchestrationStack extends cdk.Stack {
       },
     });
 
-    // Create CloudWatch Event Rule for SLA monitoring (runs hourly)
-    new events.Rule(this, 'SlaMonitorRule', {
-      ruleName: `${prefix}-sla-monitor`,
-      schedule: events.Schedule.rate(cdk.Duration.hours(1)),
-      targets: [new targets.LambdaFunction(lambdaFunctions.reviewSlaMonitor)],
+    // Grant Step Functions permission to invoke Lambdas
+    Object.values(lambdaFunctions).forEach((fn) => {
+      if (fn) {
+        fn.grantInvoke(this.verificationStateMachine);
+      }
     });
+
+    // Grant SQS permissions
+    this.reviewQueue.grantSendMessages(lambdaFunctions.queueForReview);
 
     // Outputs
     new cdk.CfnOutput(this, 'StateMachineArn', {

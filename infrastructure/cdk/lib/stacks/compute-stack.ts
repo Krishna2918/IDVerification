@@ -22,8 +22,10 @@ export interface ComputeStackProps extends cdk.StackProps {
 
 export interface LambdaFunctions {
   createSession: lambda.Function;
-  getSessionStatus: lambda.Function;
+  getSession: lambda.Function;
+  recordConsent: lambda.Function;
   uploadDocument: lambda.Function;
+  confirmUpload: lambda.Function;
   createLivenessSession: lambda.Function;
   getLivenessResult: lambda.Function;
   submitVerification: lambda.Function;
@@ -35,7 +37,6 @@ export interface LambdaFunctions {
   getReviewQueue: lambda.Function;
   getReviewItem: lambda.Function;
   submitReviewDecision: lambda.Function;
-  reviewSlaMonitor: lambda.Function;
   auditLogger: lambda.Function;
 }
 
@@ -164,26 +165,43 @@ export class ComputeStack extends cdk.Stack {
       });
     };
 
+    // Base path for Lambda code
+    const lambdaBasePath = path.join(__dirname, '../../../../backend/lambdas');
+
     // API Lambda Functions
     this.lambdaFunctions = {
       // Session Management
       createSession: createLambda(
         'CreateSession',
-        path.join(__dirname, '../../../..', 'backend/lambdas/api/create-session'),
+        path.join(lambdaBasePath, 'api/create-session'),
         apiLambdaRole,
         { timeout: cdk.Duration.seconds(10) }
       ),
 
-      getSessionStatus: createLambda(
-        'GetSessionStatus',
-        path.join(__dirname, '../../../..', 'backend/lambdas/api/get-session-status'),
+      getSession: createLambda(
+        'GetSession',
+        path.join(lambdaBasePath, 'api/get-session'),
         apiLambdaRole,
         { timeout: cdk.Duration.seconds(5) }
       ),
 
+      recordConsent: createLambda(
+        'RecordConsent',
+        path.join(lambdaBasePath, 'api/record-consent'),
+        apiLambdaRole,
+        { timeout: cdk.Duration.seconds(10) }
+      ),
+
       uploadDocument: createLambda(
         'UploadDocument',
-        path.join(__dirname, '../../../..', 'backend/lambdas/api/upload-document'),
+        path.join(lambdaBasePath, 'api/upload-document'),
+        apiLambdaRole,
+        { timeout: cdk.Duration.seconds(10) }
+      ),
+
+      confirmUpload: createLambda(
+        'ConfirmUpload',
+        path.join(lambdaBasePath, 'api/confirm-upload'),
         apiLambdaRole,
         { timeout: cdk.Duration.seconds(10) }
       ),
@@ -191,21 +209,21 @@ export class ComputeStack extends cdk.Stack {
       // Liveness
       createLivenessSession: createLambda(
         'CreateLivenessSession',
-        path.join(__dirname, '../../../..', 'backend/lambdas/api/create-liveness-session'),
+        path.join(lambdaBasePath, 'api/create-liveness-session'),
         apiLambdaRole,
         { timeout: cdk.Duration.seconds(15) }
       ),
 
       getLivenessResult: createLambda(
         'GetLivenessResult',
-        path.join(__dirname, '../../../..', 'backend/lambdas/api/get-liveness-result'),
+        path.join(lambdaBasePath, 'api/get-liveness-result'),
         apiLambdaRole,
         { timeout: cdk.Duration.seconds(10) }
       ),
 
       submitVerification: createLambda(
         'SubmitVerification',
-        path.join(__dirname, '../../../..', 'backend/lambdas/api/submit-verification'),
+        path.join(lambdaBasePath, 'api/submit-verification'),
         apiLambdaRole,
         { timeout: cdk.Duration.seconds(15) }
       ),
@@ -213,28 +231,28 @@ export class ComputeStack extends cdk.Stack {
       // Processing Functions
       extractDocumentData: createLambda(
         'ExtractDocumentData',
-        path.join(__dirname, '../../../..', 'backend/lambdas/processing/extract-document-data'),
+        path.join(lambdaBasePath, 'processing/extract-document-data'),
         processingLambdaRole,
         { timeout: cdk.Duration.seconds(60), memorySize: 512 }
       ),
 
       compareFaces: createLambda(
         'CompareFaces',
-        path.join(__dirname, '../../../..', 'backend/lambdas/processing/compare-faces'),
+        path.join(lambdaBasePath, 'processing/compare-faces'),
         processingLambdaRole,
         { timeout: cdk.Duration.seconds(30), memorySize: 512 }
       ),
 
       decisionEngine: createLambda(
         'DecisionEngine',
-        path.join(__dirname, '../../../..', 'backend/lambdas/processing/decision-engine'),
+        path.join(lambdaBasePath, 'processing/decision-engine'),
         processingLambdaRole,
         { timeout: cdk.Duration.seconds(15) }
       ),
 
       finalizeVerification: createLambda(
         'FinalizeVerification',
-        path.join(__dirname, '../../../..', 'backend/lambdas/processing/finalize-verification'),
+        path.join(lambdaBasePath, 'processing/finalize-verification'),
         processingLambdaRole,
         { timeout: cdk.Duration.seconds(15) }
       ),
@@ -242,43 +260,36 @@ export class ComputeStack extends cdk.Stack {
       // Review Functions
       queueForReview: createLambda(
         'QueueForReview',
-        path.join(__dirname, '../../../..', 'backend/lambdas/review/queue-for-review'),
+        path.join(lambdaBasePath, 'processing/queue-for-review'),
         processingLambdaRole,
         { timeout: cdk.Duration.seconds(15) }
       ),
 
       getReviewQueue: createLambda(
         'GetReviewQueue',
-        path.join(__dirname, '../../../..', 'backend/lambdas/review/get-review-queue'),
+        path.join(lambdaBasePath, 'review/get-review-queue'),
         processingLambdaRole,
         { timeout: cdk.Duration.seconds(10) }
       ),
 
       getReviewItem: createLambda(
         'GetReviewItem',
-        path.join(__dirname, '../../../..', 'backend/lambdas/review/get-review-item'),
+        path.join(lambdaBasePath, 'review/get-review-item'),
         processingLambdaRole,
         { timeout: cdk.Duration.seconds(15), memorySize: 512 }
       ),
 
       submitReviewDecision: createLambda(
         'SubmitReviewDecision',
-        path.join(__dirname, '../../../..', 'backend/lambdas/review/submit-review-decision'),
+        path.join(lambdaBasePath, 'review/submit-review-decision'),
         processingLambdaRole,
         { timeout: cdk.Duration.seconds(15) }
-      ),
-
-      reviewSlaMonitor: createLambda(
-        'ReviewSlaMonitor',
-        path.join(__dirname, '../../../..', 'backend/lambdas/review/review-sla-monitor'),
-        processingLambdaRole,
-        { timeout: cdk.Duration.seconds(60) }
       ),
 
       // Audit
       auditLogger: createLambda(
         'AuditLogger',
-        path.join(__dirname, '../../../..', 'backend/lambdas/audit/audit-logger'),
+        path.join(lambdaBasePath, 'audit/audit-logger'),
         processingLambdaRole,
         { timeout: cdk.Duration.seconds(10) }
       ),

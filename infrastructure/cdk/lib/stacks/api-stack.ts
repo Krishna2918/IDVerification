@@ -166,7 +166,13 @@ export class ApiStack extends cdk.Stack {
     const session = sessions.addResource('{sessionId}');
 
     // GET /v1/sessions/{sessionId} - Get session status
-    session.addMethod('GET', createIntegration(lambdaFunctions.getSessionStatus));
+    session.addMethod('GET', createIntegration(lambdaFunctions.getSession));
+
+    // /v1/sessions/{sessionId}/consent
+    const consent = session.addResource('consent');
+
+    // POST /v1/sessions/{sessionId}/consent - Record user consent
+    consent.addMethod('POST', createIntegration(lambdaFunctions.recordConsent));
 
     // /v1/sessions/{sessionId}/document
     const document = session.addResource('document');
@@ -176,7 +182,7 @@ export class ApiStack extends cdk.Stack {
 
     // /v1/sessions/{sessionId}/document/confirm
     const documentConfirm = document.addResource('confirm');
-    documentConfirm.addMethod('POST', createIntegration(lambdaFunctions.uploadDocument));
+    documentConfirm.addMethod('POST', createIntegration(lambdaFunctions.confirmUpload));
 
     // /v1/sessions/{sessionId}/liveness
     const liveness = session.addResource('liveness');

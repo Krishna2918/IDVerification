@@ -1,0 +1,269 @@
+{
+  "Comment": "ID Verification Workflow - Orchestrates document extraction, face comparison, and decision making",
+  "StartAt": "ExtractDocumentData",
+  "States": {
+    "ExtractDocumentData": {
+      "Type": "Task",
+      "Resource": "${ExtractDocumentDataFunctionArn}",
+      "Parameters": {
+        "sessionId.$": "$.sessionId",
+        "documentFrontKey.$": "$.documentFrontKey",
+        "documentBackKey.$": "$.documentBackKey"
+      },
+      "ResultPath": "$.extractionResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "HandleExtractionError"
+        }
+      ],
+      "Next": "CheckExtractionResult"
+    },
+
+    "HandleExtractionError": {
+      "Type": "Pass",
+      "Parameters": {
+        "sessionId.$": "$.sessionId",
+        "decision": "FAIL",
+        "reason": "DOCUMENT_EXTRACTION_FAILED",
+        "scores": {
+          "similarity": 0,
+          "ocrConfidence": 0,
+          "livenessConfidence.$": "$.livenessConfidence"
+        },
+        "extractedData": {},
+        "qualityIssues": ["Document extraction failed - please upload a clearer image"]
+      },
+      "Next": "FinalizeVerification"
+    },
+
+    "CheckExtractionResult": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.extractionResult.isExpired",
+          "BooleanEquals": true,
+          "Next": "DocumentExpiredFail"
+        },
+        {
+          "Variable": "$.extractionResult.averageConfidence",
+          "NumericLessThan": 70,
+          "Next": "LowOCRConfidenceFail"
+        }
+      ],
+      "Default": "CompareFaces"
+    },
+
+    "DocumentExpiredFail": {
+      "Type": "Pass",
+      "Parameters": {
+        "sessionId.$": "$.sessionId",
+        "decision": "FAIL",
+        "reason": "DOCUMENT_EXPIRED",
+        "scores": {
+          "similarity": 0,
+          "ocrConfidence.$": "$.extractionResult.averageConfidence",
+          "livenessConfidence.$": "$.livenessConfidence"
+        },
+        "extractedData.$": "$.extractionResult.extractedData",
+        "qualityIssues.$": "$.extractionResult.qualityIssues"
+      },
+      "Next": "FinalizeVerification"
+    },
+
+    "LowOCRConfidenceFail": {
+      "Type": "Pass",
+      "Parameters": {
+        "sessionId.$": "$.sessionId",
+        "decision": "FAIL",
+        "reason": "OCR_CONFIDENCE_TOO_LOW",
+        "scores": {
+          "similarity": 0,
+          "ocrConfidence.$": "$.extractionResult.averageConfidence",
+          "livenessConfidence.$": "$.livenessConfidence"
+        },
+        "extractedData.$": "$.extractionResult.extractedData",
+        "qualityIssues.$": "$.extractionResult.qualityIssues"
+      },
+      "Next": "FinalizeVerification"
+    },
+
+    "CompareFaces": {
+      "Type": "Task",
+      "Resource": "${CompareFacesFunctionArn}",
+      "Parameters": {
+        "sessionId.$": "$.sessionId",
+        "documentFrontKey.$": "$.documentFrontKey",
+        "livenessReferenceKey.$": "$.livenessReferenceKey"
+      },
+      "ResultPath": "$.comparisonResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "HandleComparisonError"
+        }
+      ],
+      "Next": "RunDecisionEngine"
+    },
+
+    "HandleComparisonError": {
+      "Type": "Pass",
+      "Parameters": {
+        "sessionId.$": "$.sessionId",
+        "decision": "REVIEW",
+        "reason": "FACE_COMPARISON_FAILED",
+        "scores": {
+          "similarity": 0,
+          "ocrConfidence.$": "$.extractionResult.averageConfidence",
+          "livenessConfidence.$": "$.livenessConfidence"
+        },
+        "extractedData.$": "$.extractionResult.extractedData",
+        "qualityIssues": ["Face comparison could not be completed - manual review required"]
+      },
+      "Next": "QueueForReview"
+    },
+
+    "RunDecisionEngine": {
+      "Type": "Task",
+      "Resource": "${DecisionEngineFunctionArn}",
+      "Parameters": {
+        "sessionId.$": "$.sessionId",
+        "livenessConfidence.$": "$.livenessConfidence",
+        "similarityScore.$": "$.comparisonResult.similarityScore",
+        "ocrConfidence.$": "$.extractionResult.averageConfidence",
+        "isExpired.$": "$.extractionResult.isExpired",
+        "missingRequiredFields.$": "$.extractionResult.missingRequiredFields",
+        "qualityIssues.$": "States.ArrayConcat($.extractionResult.qualityIssues, $.comparisonResult.qualityIssues)"
+      },
+      "ResultPath": "$.decision",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "RouteDecision"
+    },
+
+    "RouteDecision": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.decision.outcome",
+          "StringEquals": "REVIEW",
+          "Next": "PrepareForReview"
+        }
+      ],
+      "Default": "PrepareForFinalize"
+    },
+
+    "PrepareForReview": {
+      "Type": "Pass",
+      "Parameters": {
+        "sessionId.$": "$.sessionId",
+        "reason.$": "$.decision.reason",
+        "scores": {
+          "similarity.$": "$.comparisonResult.similarityScore",
+          "ocrConfidence.$": "$.extractionResult.averageConfidence",
+          "livenessConfidence.$": "$.livenessConfidence"
+        },
+        "qualityIssues.$": "$.decision.qualityIssues",
+        "extractedData.$": "$.extractionResult.extractedData",
+        "documentFrontKey.$": "$.documentFrontKey",
+        "documentBackKey.$": "$.documentBackKey",
+        "livenessReferenceKey.$": "$.livenessReferenceKey"
+      },
+      "Next": "QueueForReview"
+    },
+
+    "QueueForReview": {
+      "Type": "Task",
+      "Resource": "${QueueForReviewFunctionArn}",
+      "Parameters": {
+        "sessionId.$": "$.sessionId",
+        "reason.$": "$.reason",
+        "scores.$": "$.scores",
+        "qualityIssues.$": "$.qualityIssues",
+        "extractedData.$": "$.extractedData",
+        "documentFrontKey.$": "$.documentFrontKey",
+        "documentBackKey.$": "$.documentBackKey",
+        "livenessReferenceKey.$": "$.livenessReferenceKey"
+      },
+      "ResultPath": "$.reviewResult",
+      "Next": "FinalizeAsReview"
+    },
+
+    "FinalizeAsReview": {
+      "Type": "Pass",
+      "Parameters": {
+        "sessionId.$": "$.sessionId",
+        "decision": "REVIEW",
+        "reason.$": "$.reason",
+        "scores.$": "$.scores",
+        "extractedData.$": "$.extractedData",
+        "qualityIssues.$": "$.qualityIssues"
+      },
+      "Next": "FinalizeVerification"
+    },
+
+    "PrepareForFinalize": {
+      "Type": "Pass",
+      "Parameters": {
+        "sessionId.$": "$.sessionId",
+        "decision.$": "$.decision.outcome",
+        "reason.$": "$.decision.reason",
+        "scores": {
+          "similarity.$": "$.comparisonResult.similarityScore",
+          "ocrConfidence.$": "$.extractionResult.averageConfidence",
+          "livenessConfidence.$": "$.livenessConfidence"
+        },
+        "extractedData.$": "$.extractionResult.extractedData",
+        "qualityIssues.$": "$.decision.qualityIssues"
+      },
+      "Next": "FinalizeVerification"
+    },
+
+    "FinalizeVerification": {
+      "Type": "Task",
+      "Resource": "${FinalizeVerificationFunctionArn}",
+      "Parameters": {
+        "sessionId.$": "$.sessionId",
+        "decision.$": "$.decision",
+        "reason.$": "$.reason",
+        "scores.$": "$.scores",
+        "extractedData.$": "$.extractedData",
+        "qualityIssues.$": "$.qualityIssues"
+      },
+      "ResultPath": "$.finalResult",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.SdkClientException"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "End": true
+    }
+  }
+}
