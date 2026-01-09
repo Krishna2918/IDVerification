@@ -51,7 +51,9 @@ export interface ReviewDetails {
     documentFront?: string;
     documentBack?: string;
     selfie?: string;
+    faceCrop?: string;
   };
+  qualityIssues: string[];
   createdAt: string;
   assignedTo?: string;
   assignedAt?: string;

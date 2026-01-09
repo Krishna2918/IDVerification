@@ -1,19 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-interface ReviewItem {
-  id: string;
-  sessionId: string;
-  createdAt: string;
-  status: 'pending' | 'in_progress' | 'completed';
-  priority: 'high' | 'medium' | 'low';
-  reasons: string[];
-  scores: {
-    similarity: number;
-    ocrConfidence: number;
-  };
-  assignedTo?: string;
-}
+import { adminApi } from '../../services/api';
+import { useAuth } from '../../contexts/AuthContext';
+import type { ReviewQueueItem } from '../../types/review';
 
 interface Stats {
   pendingReviews: number;
@@ -24,81 +13,48 @@ interface Stats {
 
 const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const [reviews, setReviews] = useState<ReviewItem[]>([]);
+  const { signOut, user } = useAuth();
+  const [reviews, setReviews] = useState<ReviewQueueItem[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'in_progress'>('pending');
 
-  useEffect(() => {
-    // Check authentication
-    const session = localStorage.getItem('adminSession');
-    if (!session) {
-      navigate('/admin/login');
-      return;
-    }
-
-    loadData();
-  }, [navigate]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setIsLoading(true);
+    setError(null);
     try {
-      // TODO: Replace with actual API calls
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Mock data
-      setStats({
-        pendingReviews: 12,
-        completedToday: 28,
-        averageTime: '4m 32s',
-        approvalRate: 78,
-      });
-
-      setReviews([
-        {
-          id: 'REV-001',
-          sessionId: 'SES-abc123',
-          createdAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-          status: 'pending',
-          priority: 'high',
-          reasons: ['SIMILARITY_BELOW_MINIMUM'],
-          scores: { similarity: 75, ocrConfidence: 92 },
-        },
-        {
-          id: 'REV-002',
-          sessionId: 'SES-def456',
-          createdAt: new Date(Date.now() - 1000 * 60 * 45).toISOString(),
-          status: 'pending',
-          priority: 'medium',
-          reasons: ['OCR_CONFIDENCE_TOO_LOW'],
-          scores: { similarity: 95, ocrConfidence: 72 },
-        },
-        {
-          id: 'REV-003',
-          sessionId: 'SES-ghi789',
-          createdAt: new Date(Date.now() - 1000 * 60 * 120).toISOString(),
-          status: 'in_progress',
-          priority: 'medium',
-          reasons: ['IMAGE_QUALITY_ISSUE'],
-          scores: { similarity: 88, ocrConfidence: 78 },
-          assignedTo: 'reviewer@company.com',
-        },
+      // Fetch stats and reviews in parallel
+      const [statsData, reviewsData] = await Promise.all([
+        adminApi.getStats(),
+        adminApi.getReviewQueue(filter === 'all' ? 'pending' : filter),
       ]);
+
+      setStats(statsData);
+      setReviews(reviewsData.items);
     } catch (err) {
       console.error('Failed to load data:', err);
+      setError('Failed to load data. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [filter]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('adminSession');
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleLogout = async () => {
+    await signOut();
     navigate('/admin/login');
   };
 
-  const handleAssign = async (reviewId: string) => {
-    // TODO: API call to assign review
+  const handleReview = (reviewId: string) => {
     navigate(`/admin/review/${reviewId}`);
+  };
+
+  const handleRefresh = () => {
+    loadData();
   };
 
   const formatTime = (isoString: string) => {
@@ -233,12 +189,12 @@ const DashboardPage: React.FC = () => {
               {/* Table Rows */}
               {filteredReviews.map((review) => (
                 <div
-                  key={review.id}
+                  key={review.reviewId}
                   className="px-6 py-4 grid grid-cols-12 gap-4 items-center hover:bg-navy-50/50 transition-colors"
                 >
                   <div className="col-span-2">
-                    <p className="font-medium text-gray-800">{review.id}</p>
-                    <p className="text-xs text-gray-500">{review.sessionId}</p>
+                    <p className="font-medium text-gray-800">{review.reviewId.substring(0, 8)}...</p>
+                    <p className="text-xs text-gray-500">{review.sessionId.substring(0, 8)}...</p>
                   </div>
                   <div className="col-span-2">
                     <p className="text-gray-700">{formatTime(review.createdAt)}</p>
@@ -273,7 +229,7 @@ const DashboardPage: React.FC = () => {
                   </div>
                   <div className="col-span-2">
                     <button
-                      onClick={() => handleAssign(review.id)}
+                      onClick={() => handleReview(review.reviewId)}
                       className="bg-gradient-to-r from-navy-700 to-navy-500 text-white rounded-full px-4 py-2 text-sm font-medium shadow-md hover:shadow-lg transition-shadow"
                     >
                       {review.status === 'in_progress' ? 'Continue' : 'Review'}
@@ -286,11 +242,35 @@ const DashboardPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Error Display */}
+      {error && (
+        <div className="px-4 mb-4">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-red-700">{error}</p>
+              <button
+                onClick={handleRefresh}
+                className="text-red-600 hover:text-red-800 font-medium"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Quick Actions */}
       <div className="px-4 mt-6 pb-8">
         <div className="bg-white rounded-3xl shadow-md border border-navy-100 p-6">
           <h3 className="font-semibold text-gray-800 mb-4">Quick Actions</h3>
           <div className="flex flex-wrap gap-3">
+            <button
+              onClick={handleRefresh}
+              disabled={isLoading}
+              className="bg-gradient-to-r from-navy-700 to-navy-500 text-white rounded-full px-5 py-2 font-medium shadow-md hover:shadow-lg transition-shadow disabled:opacity-50"
+            >
+              {isLoading ? 'Refreshing...' : 'Refresh Queue'}
+            </button>
             <button className="bg-navy-50 border border-navy-200 text-gray-700 rounded-full px-5 py-2 font-medium hover:bg-navy-100 transition-colors">
               Export Reports
             </button>

@@ -182,12 +182,13 @@ export const adminApi = {
     status: 'pending' | 'in_progress' | 'all' = 'pending',
     limit = 50,
     lastKey?: string
-  ): Promise<ReviewQueueResponse> => {
+  ): Promise<{ items: ReviewQueueResponse['reviews']; nextKey?: string }> => {
     const params = new URLSearchParams({ status, limit: limit.toString() });
     if (lastKey) {
       params.append('lastKey', lastKey);
     }
-    return fetchApi<ReviewQueueResponse>(`/admin/reviews?${params}`);
+    const response = await fetchApi<ReviewQueueResponse>(`/admin/reviews?${params}`);
+    return { items: response.reviews, nextKey: response.nextKey };
   },
 
   /**

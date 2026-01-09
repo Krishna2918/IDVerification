@@ -1,100 +1,42 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-
-interface ReviewDetails {
-  id: string;
-  sessionId: string;
-  createdAt: string;
-  status: 'pending' | 'in_progress' | 'completed';
-  priority: 'high' | 'medium' | 'low';
-  reasons: string[];
-  scores: {
-    similarity: number;
-    ocrConfidence: number;
-    livenessConfidence: number;
-  };
-  extractedData: {
-    documentType: string;
-    documentNumber: string;
-    fullName: string;
-    dateOfBirth: string;
-    expiryDate: string;
-    issuingCountry: string;
-  };
-  images: {
-    documentFront: string;
-    documentBack?: string;
-    selfie: string;
-    faceCrop: string;
-  };
-  qualityIssues: string[];
-}
+import { adminApi } from '../../services/api';
+import type { ReviewDetails, ReviewDecision } from '../../types/review';
 
 const ReviewPage: React.FC = () => {
   const navigate = useNavigate();
   const { reviewId } = useParams<{ reviewId: string }>();
   const [review, setReview] = useState<ReviewDetails | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [decision, setDecision] = useState<'approve' | 'reject' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [decision, setDecision] = useState<ReviewDecision | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
 
-  useEffect(() => {
-    const session = localStorage.getItem('adminSession');
-    if (!session) {
-      navigate('/admin/login');
-      return;
-    }
+  const loadReview = useCallback(async () => {
+    if (!reviewId) return;
 
-    loadReview();
-  }, [navigate, reviewId]);
-
-  const loadReview = async () => {
     setIsLoading(true);
+    setError(null);
     try {
-      // TODO: Replace with actual API call
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      // Mock data
-      setReview({
-        id: reviewId || 'REV-001',
-        sessionId: 'SES-abc123',
-        createdAt: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
-        status: 'in_progress',
-        priority: 'high',
-        reasons: ['SIMILARITY_BELOW_MINIMUM'],
-        scores: {
-          similarity: 75,
-          ocrConfidence: 92,
-          livenessConfidence: 98,
-        },
-        extractedData: {
-          documentType: 'DRIVERS_LICENSE',
-          documentNumber: 'DL-123456789',
-          fullName: 'JOHN MICHAEL SMITH',
-          dateOfBirth: '1985-03-15',
-          expiryDate: '2027-03-15',
-          issuingCountry: 'Canada',
-        },
-        images: {
-          documentFront: '/placeholder-id-front.jpg',
-          documentBack: '/placeholder-id-back.jpg',
-          selfie: '/placeholder-selfie.jpg',
-          faceCrop: '/placeholder-face-crop.jpg',
-        },
-        qualityIssues: ['Minor glare detected on document'],
-      });
+      const reviewData = await adminApi.getReviewDetails(reviewId);
+      setReview(reviewData);
     } catch (err) {
       console.error('Failed to load review:', err);
+      setError('Failed to load review details. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [reviewId]);
+
+  useEffect(() => {
+    loadReview();
+  }, [loadReview]);
 
   const handleSubmitDecision = async () => {
-    if (!decision) return;
+    if (!decision || !reviewId) return;
     if (decision === 'reject' && !rejectReason) {
       alert('Please select a rejection reason');
       return;
@@ -102,8 +44,11 @@ const ReviewPage: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      // TODO: API call to submit decision
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await adminApi.submitDecision(reviewId, {
+        decision,
+        reason: decision === 'reject' ? rejectReason : undefined,
+        notes: notes || undefined,
+      });
 
       navigate('/admin/dashboard');
     } catch (err) {
@@ -152,7 +97,20 @@ const ReviewPage: React.FC = () => {
     return (
       <div className="min-h-screen bg-navy-50 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-gray-600">Review not found</p>
+          {error ? (
+            <>
+              <div className="text-5xl mb-4">!</div>
+              <p className="text-red-600 mb-2">{error}</p>
+              <button
+                onClick={loadReview}
+                className="text-navy-600 hover:underline mr-4"
+              >
+                Retry
+              </button>
+            </>
+          ) : (
+            <p className="text-gray-600">Review not found</p>
+          )}
           <button
             onClick={() => navigate('/admin/dashboard')}
             className="mt-4 text-navy-600 hover:underline"
@@ -177,8 +135,8 @@ const ReviewPage: React.FC = () => {
               <span className="text-xl">←</span>
             </button>
             <div>
-              <h1 className="text-2xl font-bold">Review: {review.id}</h1>
-              <p className="text-navy-100 text-sm">Session: {review.sessionId}</p>
+              <h1 className="text-2xl font-bold">Review: {review.reviewId.substring(0, 8)}...</h1>
+              <p className="text-navy-100 text-sm">Session: {review.sessionId.substring(0, 8)}...</p>
             </div>
           </div>
           <div className="flex gap-2">
@@ -219,22 +177,38 @@ const ReviewPage: React.FC = () => {
                 <p className="text-sm text-gray-500 mb-2">ID Photo</p>
                 <div
                   className="aspect-square bg-gray-200 rounded-2xl overflow-hidden cursor-pointer hover:ring-2 hover:ring-navy-500 transition-all"
-                  onClick={() => setZoomedImage(review.images.faceCrop)}
+                  onClick={() => review.images.faceCrop && setZoomedImage(review.images.faceCrop)}
                 >
-                  <div className="w-full h-full flex items-center justify-center text-6xl bg-gradient-to-br from-navy-100 to-slate-100">
-                    👤
-                  </div>
+                  {review.images.faceCrop ? (
+                    <img
+                      src={review.images.faceCrop}
+                      alt="Face from ID"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-6xl bg-gradient-to-br from-navy-100 to-slate-100">
+                      👤
+                    </div>
+                  )}
                 </div>
               </div>
               <div>
                 <p className="text-sm text-gray-500 mb-2">Selfie</p>
                 <div
                   className="aspect-square bg-gray-200 rounded-2xl overflow-hidden cursor-pointer hover:ring-2 hover:ring-navy-500 transition-all"
-                  onClick={() => setZoomedImage(review.images.selfie)}
+                  onClick={() => review.images.selfie && setZoomedImage(review.images.selfie)}
                 >
-                  <div className="w-full h-full flex items-center justify-center text-6xl bg-gradient-to-br from-navy-100 to-slate-100">
-                    🤳
-                  </div>
+                  {review.images.selfie ? (
+                    <img
+                      src={review.images.selfie}
+                      alt="Selfie"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-6xl bg-gradient-to-br from-navy-100 to-slate-100">
+                      🤳
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -253,11 +227,19 @@ const ReviewPage: React.FC = () => {
                 <p className="text-sm text-gray-500 mb-2">Front</p>
                 <div
                   className="aspect-[3/2] bg-gray-200 rounded-2xl overflow-hidden cursor-pointer hover:ring-2 hover:ring-navy-500 transition-all"
-                  onClick={() => setZoomedImage(review.images.documentFront)}
+                  onClick={() => review.images.documentFront && setZoomedImage(review.images.documentFront)}
                 >
-                  <div className="w-full h-full flex items-center justify-center text-5xl bg-gradient-to-br from-navy-100 to-slate-100">
-                    📄
-                  </div>
+                  {review.images.documentFront ? (
+                    <img
+                      src={review.images.documentFront}
+                      alt="Document front"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-5xl bg-gradient-to-br from-navy-100 to-slate-100">
+                      📄
+                    </div>
+                  )}
                 </div>
               </div>
               {review.images.documentBack && (
@@ -267,9 +249,11 @@ const ReviewPage: React.FC = () => {
                     className="aspect-[3/2] bg-gray-200 rounded-2xl overflow-hidden cursor-pointer hover:ring-2 hover:ring-navy-500 transition-all"
                     onClick={() => setZoomedImage(review.images.documentBack!)}
                   >
-                    <div className="w-full h-full flex items-center justify-center text-5xl bg-gradient-to-br from-navy-100 to-slate-100">
-                      📄
-                    </div>
+                    <img
+                      src={review.images.documentBack}
+                      alt="Document back"
+                      className="w-full h-full object-cover"
+                    />
                   </div>
                 </div>
               )}
@@ -423,10 +407,12 @@ const ReviewPage: React.FC = () => {
           className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
           onClick={() => setZoomedImage(null)}
         >
-          <div className="max-w-4xl max-h-full">
-            <div className="bg-gray-300 rounded-2xl p-8 flex items-center justify-center min-h-[400px]">
-              <span className="text-8xl">📷</span>
-            </div>
+          <div className="max-w-4xl max-h-[90vh] overflow-auto">
+            <img
+              src={zoomedImage}
+              alt="Zoomed view"
+              className="rounded-2xl max-w-full max-h-[80vh] object-contain"
+            />
             <p className="text-white text-center mt-4">Click anywhere to close</p>
           </div>
         </div>
